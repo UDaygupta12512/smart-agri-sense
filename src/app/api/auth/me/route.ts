@@ -4,27 +4,16 @@ import { AUTH_SESSION_COOKIE, getUserFromSession } from '@/lib/auth';
 export const runtime = 'nodejs';
 
 export async function GET(request: NextRequest) {
-  const sessionToken = request.cookies.get(AUTH_SESSION_COOKIE)?.value;
+  try {
+    const sessionToken = request.cookies.get(AUTH_SESSION_COOKIE)?.value ?? '';
+    const user = await getUserFromSession(sessionToken);
 
-  if (!sessionToken) {
-    return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+    if (!user) {
+      return NextResponse.json({ message: 'Not authenticated.' }, { status: 401 });
+    }
+
+    return NextResponse.json({ user });
+  } catch {
+    return NextResponse.json({ message: 'Unable to verify session.' }, { status: 500 });
   }
-
-  const user = await getUserFromSession(sessionToken);
-
-  if (!user) {
-    const response = NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
-    response.cookies.set({
-      name: AUTH_SESSION_COOKIE,
-      value: '',
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      path: '/',
-      maxAge: 0,
-    });
-    return response;
-  }
-
-  return NextResponse.json({ user });
 }
