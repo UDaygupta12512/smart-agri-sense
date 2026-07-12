@@ -140,7 +140,11 @@ export default function LoginPage() {
 
             if (authError) {
                 console.error("Supabase auth error:", authError);
-                setError(authError?.message || (typeof authError === 'string' ? authError : text.loginFailed || 'Login failed'));
+                let msg = authError?.message;
+                if (typeof msg === 'string' && (msg === '{}' || msg.trim() === '')) {
+                    msg = '';
+                }
+                setError(msg || (typeof authError === 'string' && authError !== '{}' ? authError : text.loginFailed || 'Login failed'));
                 return;
             }
 

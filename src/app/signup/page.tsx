@@ -228,7 +228,11 @@ export default function SignupPage() {
 
             if (authError) {
                 console.error("Supabase auth error:", authError);
-                setError(authError?.message || (typeof authError === 'string' ? authError : 'Unable to create account. Please try again.'));
+                let msg = authError?.message;
+                if (typeof msg === 'string' && (msg === '{}' || msg.trim() === '')) {
+                    msg = '';
+                }
+                setError(msg || (typeof authError === 'string' && authError !== '{}' ? authError : 'Unable to create account. Please verify your connection.'));
                 return;
             }
 
