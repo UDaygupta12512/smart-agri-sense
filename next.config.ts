@@ -6,8 +6,7 @@ const nextConfig: NextConfig = {
   reactCompiler: false,
   output: 'standalone',
   typescript: { ignoreBuildErrors: true },
-  // @ts-ignore
-  eslint: { ignoreDuringBuilds: true },
+
   turbopack: {
     root: path.resolve(__dirname),
   },
