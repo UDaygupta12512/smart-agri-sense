@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Settings, User, Bell, Shield, Languages, Palette, HelpCircle, Save, Check, Eye, EyeOff, ChevronDown, ChevronUp, Sun, Moon, Monitor, AlertCircle } from 'lucide-react';
+import { createClient } from '@/utils/supabase/client';
 
 const PHONE_REGEX = /^[6-9]\d{9}$/;
 
@@ -40,6 +41,7 @@ export default function SettingsPage() {
     const [activeTab, setActiveTab] = useState('Profile');
     const [saveMessage, setSaveMessage] = useState('');
     const [profileErrors, setProfileErrors] = useState<ProfileErrors>({});
+    const supabase = createClient();
 
     function loadStoredSettings() {
         if (typeof window === 'undefined') return null;
@@ -339,9 +341,7 @@ export default function SettingsPage() {
                                     onClick={async () => {
                                         if (window.confirm('Are you sure you want to delete your account? All local data will be cleared. This action cannot be undone.')) {
                                             try {
-                                                await fetch('/api/auth/logout', {
-                                                    method: 'POST',
-                                                });
+                                                await supabase.auth.signOut();
                                             } catch {}
                                             try {
                                                 localStorage.removeItem('isLoggedIn');

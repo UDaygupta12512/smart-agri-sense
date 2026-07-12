@@ -44,6 +44,8 @@ function getInitials(name: string): string {
     return `${parts[0][0] ?? ''}${parts[parts.length - 1][0] ?? ''}`.toUpperCase();
 }
 
+import { createClient } from '@/utils/supabase/client';
+
 export default function DashboardLayout({
     children,
 }: {
@@ -57,6 +59,7 @@ export default function DashboardLayout({
     const { t } = useSiteLanguage();
     const pageTitle = t(PAGE_TITLE_KEYS[pathname] ?? 'dashboard');
     const notifRef = useRef<HTMLDivElement>(null);
+    const supabase = createClient();
 
     // Fetch user details for the header avatar in the background without blocking render.
     // The route itself is protected by Next.js middleware, so we don't need to block UI.
@@ -65,18 +68,14 @@ export default function DashboardLayout({
 
         async function checkAuth() {
             try {
-                const response = await fetch('/api/auth/me', {
-                    method: 'GET',
-                    cache: 'no-store',
-                });
+                const { data: { user }, error } = await supabase.auth.getUser();
 
-                if (!response.ok) {
+                if (error || !user) {
                     if (isMounted) router.replace('/login');
                     return;
                 }
 
-                const payload = (await response.json()) as { user?: SessionUser };
-                const displayName = payload.user?.name?.trim() || 'Farmer';
+                const displayName = user.user_metadata?.full_name || user.email?.split('@')[0] || 'Farmer';
 
                 if (isMounted) {
                     setUserInitials(getInitials(displayName));
@@ -85,11 +84,8 @@ export default function DashboardLayout({
                 try {
                     localStorage.setItem('isLoggedIn', 'true');
                     localStorage.setItem('userName', displayName);
-                    if (payload.user?.email) {
-                        localStorage.setItem('userEmail', payload.user.email);
-                    }
-                    if (payload.user?.location) {
-                        localStorage.setItem('userLocation', payload.user.location);
+                    if (user.email) {
+                        localStorage.setItem('userEmail', user.email);
                     }
                 } catch {
                     // localStorage may be unavailable

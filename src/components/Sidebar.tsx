@@ -54,10 +54,13 @@ interface SidebarProps {
     onClose?: () => void;
 }
 
+import { createClient } from '@/utils/supabase/client';
+
 export default function Sidebar({ isMobile = false, onClose }: SidebarProps) {
     const pathname = usePathname();
     const [isSigningOut, setIsSigningOut] = useState(false);
     const { t } = useSiteLanguage();
+    const supabase = createClient();
 
     const handleSignOut = async () => {
         if (isSigningOut) {
@@ -67,9 +70,7 @@ export default function Sidebar({ isMobile = false, onClose }: SidebarProps) {
         setIsSigningOut(true);
 
         try {
-            await fetch('/api/auth/logout', {
-                method: 'POST',
-            });
+            await supabase.auth.signOut();
         } catch {
             // Even if API logout fails, clear local client state below.
         }
