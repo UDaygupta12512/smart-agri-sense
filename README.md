@@ -4,7 +4,6 @@
 
 Leveraging cutting-edge technologies like Large Language Models (LLMs), real-time weather forecasting, and market data, this platform acts as an all-in-one assistant (Krishi Mitra) for farmers to maximize their yield and income.
 
-![SmartAgriSense Dashboard Preview](./public/noise.png)
 
 ## 🚀 Key Features
 

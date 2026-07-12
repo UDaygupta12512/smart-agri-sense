@@ -227,7 +227,8 @@ export default function SignupPage() {
             });
 
             if (authError) {
-                setError(authError.message || 'Unable to create account. Please try again.');
+                console.error("Supabase auth error:", authError);
+                setError(authError?.message || (typeof authError === 'string' ? authError : 'Unable to create account. Please try again.'));
                 return;
             }
 
@@ -241,8 +242,10 @@ export default function SignupPage() {
 
             // Force a full page navigation so the cookie is sent with the request
             window.location.href = '/dashboard';
-        } catch {
-            setError('Unable to create your account right now. Please try again in a moment.');
+        } catch (err: any) {
+            console.error("Unexpected error:", err);
+            const msg = err?.message || (typeof err === 'string' ? err : null);
+            setError(msg && msg !== '{}' ? msg : 'Unable to create your account right now. Please try again in a moment.');
         } finally {
             setIsLoading(false);
         }

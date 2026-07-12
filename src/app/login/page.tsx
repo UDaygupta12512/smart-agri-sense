@@ -139,14 +139,17 @@ export default function LoginPage() {
             });
 
             if (authError) {
-                setError(authError.message || text.loginFailed);
+                console.error("Supabase auth error:", authError);
+                setError(authError?.message || (typeof authError === 'string' ? authError : text.loginFailed || 'Login failed'));
                 return;
             }
 
             // Force a full page navigation so the cookie is sent with the request
             window.location.href = '/dashboard';
-        } catch {
-            setError(text.loginRetry);
+        } catch (err: any) {
+            console.error("Unexpected error:", err);
+            const msg = err?.message || (typeof err === 'string' ? err : null);
+            setError(msg && msg !== '{}' ? msg : (text.loginRetry || 'Please try again later.'));
         } finally {
             setIsLoading(false);
         }
