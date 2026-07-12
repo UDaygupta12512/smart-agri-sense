@@ -248,7 +248,8 @@ export default function SignupPage() {
                 // localStorage might be blocked; auth still works via cookie session.
             }
 
-            router.push('/dashboard');
+            // Force a full page navigation so the cookie is sent with the request
+            window.location.href = '/dashboard';
         } catch {
             setError('Unable to create your account right now. Please try again in a moment.');
         } finally {

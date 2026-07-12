@@ -167,7 +167,8 @@ export default function LoginPage() {
                 // localStorage might be blocked; session cookie still works.
             }
 
-            router.push('/dashboard');
+            // Force a full page navigation so the cookie is sent with the request
+            window.location.href = '/dashboard';
         } catch {
             setError(text.loginRetry);
         } finally {
