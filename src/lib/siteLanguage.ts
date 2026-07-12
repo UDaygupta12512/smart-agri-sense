@@ -52,7 +52,7 @@ const UI_TEXT: Record<SiteLanguageCode, Record<string, string>> = {
     msp: 'Minimum Support Price',
     communityForum: 'Community Forum',
     soilLabs: 'Soil Labs',
-    fertilizerCalc: 'Fertilizer Calc',
+
     yieldPredictor: 'Yield Predictor',
     agriShorts: 'Agri Shorts',
     cropLifecycle: 'Crop Lifecycle',
