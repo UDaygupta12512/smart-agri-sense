@@ -9,9 +9,9 @@ export async function proxy(request: NextRequest) {
     const nonce = Buffer.from(crypto.randomUUID()).toString('base64');
     const cspHeader = `
         default-src 'self';
-        script-src 'self' 'nonce-${nonce}' 'strict-dynamic';
+        script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com;
         style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
-        img-src 'self' blob: data:;
+        img-src 'self' blob: data: https://*;
         font-src 'self' https://fonts.gstatic.com;
         object-src 'none';
         base-uri 'self';
