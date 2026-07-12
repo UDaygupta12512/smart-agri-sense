@@ -244,6 +244,14 @@ export default function SignupPage() {
                 localStorage.setItem('isLoggedIn', 'true');
                 localStorage.setItem('userName', result.user?.name ?? trimmedName);
                 localStorage.setItem('userEmail', result.user?.email ?? normalizedEmail);
+                
+                // Track registered users to prevent login without signup (simulating DB)
+                const registeredStr = localStorage.getItem('registeredUsers') || '[]';
+                const registeredUsers = JSON.parse(registeredStr);
+                if (!registeredUsers.includes(normalizedEmail)) {
+                    registeredUsers.push(normalizedEmail);
+                    localStorage.setItem('registeredUsers', JSON.stringify(registeredUsers));
+                }
             } catch {
                 // localStorage might be blocked; auth still works via cookie session.
             }

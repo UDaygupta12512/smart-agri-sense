@@ -41,6 +41,7 @@ export default function LoginPage() {
             shortPassword: 'Password must be at least 8 characters long.',
             loginFailed: 'Login failed. Please try again.',
             loginRetry: 'Unable to login right now. Please try again in a moment.',
+            accountNotFound: 'Account not found. Please create an account first.',
         },
         hi: {
             welcome: 'फिर से स्वागत है, किसान!',
@@ -56,6 +57,7 @@ export default function LoginPage() {
             shortPassword: 'पासवर्ड कम से कम 8 अक्षरों का होना चाहिए।',
             loginFailed: 'लॉगिन विफल हुआ। कृपया फिर प्रयास करें।',
             loginRetry: 'अभी लॉगिन संभव नहीं है। कृपया थोड़ी देर बाद प्रयास करें।',
+            accountNotFound: 'खाता नहीं मिला। कृपया पहले खाता बनाएं।',
         },
         ta: {
             welcome: 'மீண்டும் வரவேற்கிறோம், விவசாயி!',
@@ -71,6 +73,7 @@ export default function LoginPage() {
             shortPassword: 'கடவுச்சொல் குறைந்தது 8 எழுத்துகள் இருக்க வேண்டும்.',
             loginFailed: 'உள்நுழைவு தோல்வி. மீண்டும் முயற்சிக்கவும்.',
             loginRetry: 'தற்போது உள்நுழைய முடியவில்லை. சிறிது நேரம் கழித்து முயற்சிக்கவும்.',
+            accountNotFound: 'கணக்கு கிடைக்கவில்லை. முதலில் கணக்கை உருவாக்கவும்.',
         },
         te: {
             welcome: 'మళ్లీ స్వాగతం రైతు!',
@@ -86,6 +89,7 @@ export default function LoginPage() {
             shortPassword: 'పాస్‌వర్డ్ కనీసం 8 అక్షరాలు ఉండాలి.',
             loginFailed: 'లాగిన్ విఫలమైంది. మళ్లీ ప్రయత్నించండి.',
             loginRetry: 'ప్రస్తుతం లాగిన్ కాలేదు. కొంతసేపటి తరువాత మళ్లీ ప్రయత్నించండి.',
+            accountNotFound: 'ఖాతా కనుగొనబడలేదు. దయచేసి ముందుగా ఖాతాను సృష్టించండి.',
         },
     };
 
@@ -129,6 +133,17 @@ export default function LoginPage() {
         if (password.length < 8) {
             setError(text.shortPassword);
             return;
+        }
+
+        try {
+            const registeredStr = localStorage.getItem('registeredUsers') || '[]';
+            const registeredUsers = JSON.parse(registeredStr);
+            if (!registeredUsers.includes(normalizedEmail)) {
+                setError(text.accountNotFound);
+                return;
+            }
+        } catch {
+            // Ignore if localStorage fails
         }
 
         setIsLoading(true);
