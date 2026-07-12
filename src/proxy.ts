@@ -23,13 +23,11 @@ export async function proxy(request: NextRequest) {
 
     const requestHeaders = new Headers(request.headers);
     requestHeaders.set('x-nonce', nonce);
-    requestHeaders.set('Content-Security-Policy', cspHeader);
 
     // Call Supabase middleware to update session and handle auth redirects
     const response = await updateSession(request);
 
-    // Apply CSP headers to the response
-    response.headers.set('Content-Security-Policy', cspHeader);
+    // Apply headers to the response
     response.headers.set('x-nonce', nonce);
 
     return response;
