@@ -18,6 +18,8 @@ interface LoginResponse {
     message?: string;
 }
 
+import { createClient } from '@/utils/supabase/client';
+
 export default function LoginPage() {
     const router = useRouter();
     const { language } = useSiteLanguage();
@@ -25,6 +27,7 @@ export default function LoginPage() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
+    const supabase = createClient();
 
     const COPY: Record<string, Record<string, string>> = {
         en: {
@@ -99,17 +102,9 @@ export default function LoginPage() {
         let isMounted = true;
 
         async function checkSession() {
-            try {
-                const response = await fetch('/api/auth/me', {
-                    method: 'GET',
-                    cache: 'no-store',
-                });
-
-                if (isMounted && response.ok) {
-                    router.replace('/dashboard');
-                }
-            } catch {
-                // Keep user on login page when no valid session exists.
+            const { data: { session } } = await supabase.auth.getSession();
+            if (isMounted && session) {
+                router.replace('/dashboard');
             }
         }
 
@@ -118,7 +113,7 @@ export default function LoginPage() {
         return () => {
             isMounted = false;
         };
-    }, [router]);
+    }, [router, supabase.auth]);
 
     const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
@@ -135,51 +130,17 @@ export default function LoginPage() {
             return;
         }
 
-        try {
-            const registeredStr = localStorage.getItem('registeredUsers') || '[]';
-            const registeredUsers = JSON.parse(registeredStr);
-            if (!registeredUsers.includes(normalizedEmail)) {
-                setError(text.accountNotFound);
-                return;
-            }
-        } catch {
-            // Ignore if localStorage fails
-        }
-
         setIsLoading(true);
 
         try {
-            const response = await fetch('/api/auth/login', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    email: normalizedEmail,
-                    password,
-                }),
+            const { data, error: authError } = await supabase.auth.signInWithPassword({
+                email: normalizedEmail,
+                password: password,
             });
 
-            const result = (await response.json().catch(() => ({}))) as LoginResponse;
-
-            if (!response.ok) {
-                setError(result.message ?? text.loginFailed);
+            if (authError) {
+                setError(authError.message || text.loginFailed);
                 return;
-            }
-
-            try {
-                localStorage.setItem('isLoggedIn', 'true');
-                if (result.user?.name) {
-                    localStorage.setItem('userName', result.user.name);
-                }
-                if (result.user?.email) {
-                    localStorage.setItem('userEmail', result.user.email);
-                }
-                if (result.user?.location) {
-                    localStorage.setItem('userLocation', result.user.location);
-                }
-            } catch {
-                // localStorage might be blocked; session cookie still works.
             }
 
             // Force a full page navigation so the cookie is sent with the request

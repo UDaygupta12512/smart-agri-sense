@@ -53,6 +53,8 @@ function calculatePasswordStrength(password: string): PasswordStrength {
     }
 }
 
+import { createClient } from '@/utils/supabase/client';
+
 export default function SignupPage() {
     const router = useRouter();
     const { language } = useSiteLanguage();
@@ -62,6 +64,7 @@ export default function SignupPage() {
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [error, setError] = useState('');
+    const supabase = createClient();
 
     const COPY: Record<string, Record<string, string>> = {
         en: {
@@ -159,17 +162,9 @@ export default function SignupPage() {
         let isMounted = true;
 
         async function checkSession() {
-            try {
-                const response = await fetch('/api/auth/me', {
-                    method: 'GET',
-                    cache: 'no-store',
-                });
-
-                if (isMounted && response.ok) {
-                    router.replace('/dashboard');
-                }
-            } catch {
-                // Stay on signup when no valid session exists.
+            const { data: { session } } = await supabase.auth.getSession();
+            if (isMounted && session) {
+                router.replace('/dashboard');
             }
         }
 
@@ -178,7 +173,7 @@ export default function SignupPage() {
         return () => {
             isMounted = false;
         };
-    }, [router]);
+    }, [router, supabase.auth]);
 
     const handleSignup = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
@@ -221,39 +216,27 @@ export default function SignupPage() {
         setIsLoading(true);
 
         try {
-            const response = await fetch('/api/auth/register', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    name: trimmedName,
-                    email: normalizedEmail,
-                    password,
-                }),
+            const { data, error: authError } = await supabase.auth.signUp({
+                email: normalizedEmail,
+                password: password,
+                options: {
+                    data: {
+                        full_name: trimmedName,
+                    }
+                }
             });
 
-            const result = (await response.json().catch(() => ({}))) as RegisterResponse;
-
-            if (!response.ok) {
-                setError(result.message ?? 'Unable to create account. Please try again.');
+            if (authError) {
+                setError(authError.message || 'Unable to create account. Please try again.');
                 return;
             }
 
             try {
                 localStorage.setItem('isLoggedIn', 'true');
-                localStorage.setItem('userName', result.user?.name ?? trimmedName);
-                localStorage.setItem('userEmail', result.user?.email ?? normalizedEmail);
-                
-                // Track registered users to prevent login without signup (simulating DB)
-                const registeredStr = localStorage.getItem('registeredUsers') || '[]';
-                const registeredUsers = JSON.parse(registeredStr);
-                if (!registeredUsers.includes(normalizedEmail)) {
-                    registeredUsers.push(normalizedEmail);
-                    localStorage.setItem('registeredUsers', JSON.stringify(registeredUsers));
-                }
+                localStorage.setItem('userName', trimmedName);
+                localStorage.setItem('userEmail', normalizedEmail);
             } catch {
-                // localStorage might be blocked; auth still works via cookie session.
+                // Ignore localStorage errors
             }
 
             // Force a full page navigation so the cookie is sent with the request
