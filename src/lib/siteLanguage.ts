@@ -737,9 +737,13 @@ export function useSiteLanguage() {
   const [language, setLanguageState] = useState<SiteLanguageCode>('en');
 
   useEffect(() => {
-    const next = readSiteLanguage();
-    setLanguageState(next);
-    syncHtmlLanguage(next);
+    let mounted = true;
+    Promise.resolve().then(() => {
+      if (!mounted) return;
+      const next = readSiteLanguage();
+      setLanguageState(next);
+      syncHtmlLanguage(next);
+    });
 
     const handleChange = () => {
       const current = readSiteLanguage();
@@ -751,13 +755,14 @@ export function useSiteLanguage() {
     window.addEventListener(APP_LANGUAGE_EVENT, handleChange);
 
     return () => {
+      mounted = false;
       window.removeEventListener('storage', handleChange);
       window.removeEventListener(APP_LANGUAGE_EVENT, handleChange);
     };
   }, []);
 
   const setLanguage = (next: SiteLanguageCode) => {
-    setLanguageState(next);
+    Promise.resolve().then(() => setLanguageState(next));
     persistSiteLanguage(next);
   };
 

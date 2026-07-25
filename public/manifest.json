@@ -1,18 +1,17 @@
 {
-  "name": "SmartAgriSense - AI Farming Advisory",
-  "short_name": "AgriSense",
-  "description": "AI-powered farming advisory for Indian farmers. Get weather, crop, market, and pest intelligence.",
+  "name": "SmartAgriSense - Farmers Advisory",
+  "short_name": "SmartAgriSense",
+  "description": "Professional agricultural advisory and market tracking for Indian farmers.",
   "start_url": "/dashboard",
   "display": "standalone",
-  "background_color": "#F1F8E9",
-  "theme_color": "#2E7D32",
+  "background_color": "#ffffff",
+  "theme_color": "#16a34a",
   "orientation": "portrait-primary",
   "icons": [
-    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
-    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
-  ],
-  "categories": ["agriculture", "weather", "business"],
-  "lang": "en-IN",
-  "dir": "ltr"
+    {
+      "src": "/favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    }
+  ]
 }

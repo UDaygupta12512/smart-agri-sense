@@ -11,12 +11,17 @@ export default function Navbar() {
     const [isLoggedIn, setIsLoggedIn] = useState(false);
     
     useEffect(() => {
-        setMounted(true);
-        try {
-            setIsLoggedIn(localStorage.getItem('isLoggedIn') === 'true');
-        } catch {
-            setIsLoggedIn(false);
-        }
+        let mounted = true;
+        Promise.resolve().then(() => {
+            if (!mounted) return;
+            setMounted(true);
+            try {
+                setIsLoggedIn(localStorage.getItem('isLoggedIn') === 'true');
+            } catch {
+                setIsLoggedIn(false);
+            }
+        });
+        return () => { mounted = false; };
     }, []);
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const pathname = usePathname();

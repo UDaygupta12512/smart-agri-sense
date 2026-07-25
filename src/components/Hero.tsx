@@ -10,11 +10,16 @@ export default function Hero() {
     const [isLoggedIn, setIsLoggedIn] = useState(false);
     
     useEffect(() => {
-        try {
-            setIsLoggedIn(localStorage.getItem('isLoggedIn') === 'true');
-        } catch {
-            setIsLoggedIn(false);
-        }
+        let mounted = true;
+        Promise.resolve().then(() => {
+            if (!mounted) return;
+            try {
+                setIsLoggedIn(localStorage.getItem('isLoggedIn') === 'true');
+            } catch {
+                setIsLoggedIn(false);
+            }
+        });
+        return () => { mounted = false; };
     }, []);
     const { t } = useSiteLanguage();
 
