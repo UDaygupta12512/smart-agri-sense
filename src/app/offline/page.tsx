@@ -1,3 +1,5 @@
+'use client';
+
 import { WifiOff, RefreshCcw } from 'lucide-react';
 
 export default function OfflinePage() {
