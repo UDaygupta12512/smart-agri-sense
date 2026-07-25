@@ -807,6 +807,7 @@ export default function PlantDoctorPage() {
     const [scanHistory, setScanHistory] = useState<{ image: string; disease: string; date: string; result: DiagnosisResult }[]>([]);
     const [showHistory, setShowHistory] = useState(false);
     const [isSpeaking, setIsSpeaking] = useState(false);
+    const [lastRequestTime, setLastRequestTime] = useState(0);
 
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -985,6 +986,13 @@ export default function PlantDoctorPage() {
             setCameraError('Please upload or capture an image before running diagnosis.');
             return;
         }
+        
+        const now = Date.now();
+        if (now - lastRequestTime < 5000) {
+            window.alert('Please wait a few seconds before scanning again to prevent system overload.');
+            return;
+        }
+        setLastRequestTime(now);
 
         if (typeof navigator !== 'undefined' && navigator.vibrate) {
             navigator.vibrate(50);

@@ -16,6 +16,18 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "SmartAgriSense - AI Farming Assistant",
   description: "Empowering farmers with real-time AI advisory, weather updates, and market insights.",
+  openGraph: {
+    title: "SmartAgriSense - AI Farming Assistant",
+    description: "Empowering farmers with real-time AI advisory, weather updates, and market insights.",
+    url: "https://smart-agri-sense.vercel.app",
+    siteName: "SmartAgriSense",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "SmartAgriSense - AI Farming Assistant",
+    description: "Empowering farmers with real-time AI advisory, weather updates, and market insights.",
+  },
 };
 
 export default function RootLayout({

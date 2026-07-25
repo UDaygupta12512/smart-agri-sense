@@ -56,6 +56,7 @@ export default function AdvisoryPage() {
   const [result, setResult] = useState<AdviceResult | null>(null);
   const [history, setHistory] = useState<AdviceRecord[]>([]);
   const [savedId, setSavedId] = useState<number | null>(null);
+  const [lastRequestTime, setLastRequestTime] = useState(0);
 
   useEffect(() => {
     setHistory(loadHistory());
@@ -83,6 +84,14 @@ export default function AdvisoryPage() {
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    
+    const now = Date.now();
+    if (now - lastRequestTime < 5000) {
+      window.alert('Please wait a few seconds before generating another advisory to prevent system overload.');
+      return;
+    }
+    setLastRequestTime(now);
+    
     setLoading(true);
     setResult(null);
     setSavedId(null);
