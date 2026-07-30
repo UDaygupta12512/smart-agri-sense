@@ -6,6 +6,7 @@ import { Mic, MicOff, X, Volume2, VolumeX, Globe, Sparkles, Wheat, Bug, Trending
 import { getVoiceLanguageCode, persistSiteLanguage, readSiteLanguage } from '@/lib/siteLanguage';
 import { motion, AnimatePresence } from 'framer-motion';
 import { buildFarmingKnowledgeAnswer, type SupportedLanguageCode as FarmingLangCode } from '@/lib/farmingKnowledgeAnswer';
+import { createClient } from '@/utils/supabase/client';
 
 type SupportedLanguageCode = FarmingLangCode;
 
@@ -285,6 +286,35 @@ export default function VoiceAssistant({
     const handleUserMessageRef = useRef<(text: string) => void>(() => {});
     const finalTranscriptRef = useRef('');
     const answerEndRef = useRef<HTMLDivElement | null>(null);
+
+    useEffect(() => {
+        const loadHistory = async () => {
+            const supabase = createClient();
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                const { data, error } = await supabase
+                    .from('chat_history')
+                    .select('*')
+                    .order('created_at', { ascending: true });
+                
+                if (!error && data) {
+                    const loadedHistory: ChatMessage[] = [];
+                    data.forEach((row: any) => {
+                        loadedHistory.push({ role: 'user', content: row.message });
+                        loadedHistory.push({ role: 'assistant', content: row.response });
+                    });
+                    setChatHistory(loadedHistory);
+                    
+                    if (data.length > 0) {
+                        const lastRow = data[data.length - 1];
+                        setLastQuestion(lastRow.message);
+                        setLastAnswer(lastRow.response);
+                    }
+                }
+            }
+        };
+        loadHistory();
+    }, []);
 
     const clearRetryTimer = () => {
         if (retryTimerRef.current) {

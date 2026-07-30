@@ -1,5 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { buildFarmingKnowledgeAnswer, type SupportedLanguageCode } from '@/lib/farmingKnowledgeAnswer';
+import { createClient as createServerClient } from '@/utils/supabase/server';
+import { createClient } from '@supabase/supabase-js';
+import { runCropAdvisoryEngine, formatAdvisoryAsText } from '@/lib/cropAdvisoryEngine';
+import { search as localVectorSearch } from '@/lib/vectorSearch';
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co',
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder_key'
+);
 
 const GEMINI_MODELS = [
     'gemini-2.5-flash',
@@ -155,8 +164,30 @@ async function callGemini(apiKey: string, prompt: string): Promise<string | null
     return null;
 }
 
+async function generateEmbedding(apiKey: string, text: string): Promise<number[] | null> {
+    try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${apiKey}`;
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: 'models/text-embedding-004',
+                content: { parts: [{ text }] }
+            })
+        });
+        if (!response.ok) return null;
+        const data = await response.json();
+        return data.embedding?.values || null;
+    } catch (e) {
+        console.error('Embedding error:', e);
+        return null;
+    }
+}
+
 export async function POST(request: NextRequest) {
     let message = '';
+    const serverSupabase = await createServerClient();
+    const { data: { user } } = await serverSupabase.auth.getUser();
     let language: SupportedLanguageCode = 'en-IN';
     let history: { role: string, content: string }[] = [];
     let locationStr = '';
@@ -215,10 +246,48 @@ export async function POST(request: NextRequest) {
             locationContext = `[SYSTEM NOTE: The farmer is currently located at GPS coordinates: ${locationStr}. Please tailor your advice (crops, weather, soil, diseases) specifically to this region in India if applicable.]\n\n`;
         }
 
+        // --- RAG Layer 1: Supabase pgvector (cloud neural search) ---
+        let ragContext = '';
+        const embedding = await generateEmbedding(apiKey, message);
+        if (embedding) {
+            const { data: documents, error } = await supabase.rpc('match_documents', {
+                query_embedding: embedding,
+                match_threshold: 0.7,
+                match_count: 3
+            });
+
+            if (!error && documents && documents.length > 0) {
+                ragContext = '[SYSTEM NOTE: Use the following retrieved documents from the official knowledge base to answer accurately.]\n';
+                documents.forEach((doc: any, i: number) => {
+                    ragContext += `--- Document ${i + 1} (Neural Search) ---\n${doc.content}\n\n`;
+                });
+                console.log(`RAG Layer 1 (Supabase pgvector): found ${documents.length} docs`);
+            }
+        }
+
+        // --- RAG Layer 2: Custom TF-IDF Search (Feature 2 — zero third-party libs) ---
+        // Runs as a fallback if Supabase returns nothing OR as a supplement
+        if (!ragContext) {
+            try {
+                const localResults = localVectorSearch(message, 3, 0.05);
+                if (localResults.length > 0) {
+                    ragContext = '[SYSTEM NOTE: Use the following retrieved documents from the local knowledge base to answer accurately.]\n';
+                    localResults.forEach((doc, i) => {
+                        ragContext += `--- Document ${i + 1} (Local TF-IDF Search, similarity: ${doc.similarity.toFixed(3)}) ---\n${doc.content}\n\n`;
+                    });
+                    console.log(`RAG Layer 2 (Custom TF-IDF): found ${localResults.length} docs`);
+                }
+            } catch (e) {
+                console.warn('Local vector search unavailable:', e);
+            }
+        }
+        // ---------------------------------------------------------------
+
         const prompt =
             `${SYSTEM_PROMPT}\n\n${languageInstruction}\n\n` +
             `${historyPrompt}` +
             `${locationContext}` +
+            `${ragContext}` +
             `User question (answer this exactly):\n"${message}"`;
 
         let aiResponse = await callGemini(apiKey, prompt);
@@ -229,15 +298,59 @@ export async function POST(request: NextRequest) {
         }
 
         if (aiResponse) {
+            if (user) {
+                const { error: insertError } = await serverSupabase.from('chat_history').insert({
+                    user_id: user.id,
+                    message: message,
+                    response: aiResponse
+                });
+                if (insertError) {
+                    console.error('Failed to save chat history:', insertError);
+                }
+            }
+
             return NextResponse.json({
                 response: aiResponse,
                 source: 'ai',
             });
         }
 
-        console.log('Both AI APIs failed, using offline knowledge base...');
+        console.log('Both AI APIs failed — trying Custom Crop Advisory Engine...');
+
+        // --- FEATURE 1: Custom Crop Advisory Engine (Zero API, Zero Libraries) ---
+        const engineResult = runCropAdvisoryEngine({ query: message });
+        if (engineResult) {
+            const engineResponse = formatAdvisoryAsText(engineResult);
+            console.log(`Decision engine matched: intent=${engineResult.intent}, crop=${engineResult.crop}, confidence=${engineResult.confidence}%`);
+
+            if (user) {
+                await serverSupabase.from('chat_history').insert({
+                    user_id: user.id,
+                    message: message,
+                    response: engineResponse,
+                });
+            }
+
+            return NextResponse.json({
+                response: engineResponse,
+                source: 'decision_engine',
+            });
+        }
+        // -----------------------------------------------------------------------
+
+        console.log('Decision engine had no match — using offline knowledge base...');
+        const fallbackResponse = localAnswer();
+        
+        if (user) {
+            await serverSupabase.from('chat_history').insert({
+                user_id: user.id,
+                message: message,
+                response: fallbackResponse
+            });
+        }
+
         return NextResponse.json({
-            response: localAnswer(),
+            response: fallbackResponse,
             source: 'offline_knowledge',
         });
     } catch (error) {
