@@ -26,6 +26,7 @@ import {
     Landmark,
     GitBranch,
     PlayCircle,
+    Brain,
 } from 'lucide-react';
 
 const sidebarItems = [
@@ -37,6 +38,7 @@ const sidebarItems = [
     { key: 'smartIrrigation', href: '/dashboard/irrigation', icon: Droplets },
     { key: 'fertilizerCalc', href: '/dashboard/fertilizer', icon: Sprout },
     { key: 'cropAdvisory', href: '/dashboard/advisory', icon: Sprout },
+    { key: 'smartCrop', href: '/dashboard/smart-crop', icon: Sprout },
     { key: 'voiceAssistant', href: '/dashboard/voice-assistant', icon: Mic },
     { key: 'plantDoctor', href: '/dashboard/pest-detection', icon: Bug },
     { key: 'marketPrices', href: '/dashboard/market', icon: ShoppingCart },

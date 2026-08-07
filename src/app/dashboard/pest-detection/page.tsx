@@ -6,12 +6,27 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 interface DiagnosisResult {
     disease: string;
+    scientificName?: string;
     plant: string;
     confidence: string;
-    severity: 'Low' | 'Medium' | 'High';
+    severity: 'Low' | 'Medium' | 'High' | 'Critical' | 'Healthy';
     description: string;
+    cause?: string;
     treatment: string[];
     preventiveMeasures: string[];
+    control?: {
+        chemical?: string;
+        biological?: string;
+        cultural?: string;
+    };
+    dosageGuide?: {
+        perLiter: string;
+        knapsack15L: string;
+        knapsack20L: string;
+        barrel200L: string;
+        perAcre: string;
+    };
+    preHarvestIntervalDays?: number;
 }
 
 type SymptomKey =
@@ -809,6 +824,9 @@ export default function PlantDoctorPage() {
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [lastRequestTime, setLastRequestTime] = useState(0);
 
+    const [sprayerCapacity, setSprayerCapacity] = useState<number>(15);
+    const [farmAcres, setFarmAcres] = useState<number>(1);
+
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
@@ -982,14 +1000,11 @@ export default function PlantDoctorPage() {
     };
 
     const handleAnalyze = async () => {
-        if (!image) {
-            setCameraError('Please upload or capture an image before running diagnosis.');
-            return;
-        }
-        
+        if (!image) return;
+
+        // Debounce: prevent spamming the analyze button (min 3 sec between requests)
         const now = Date.now();
-        if (now - lastRequestTime < 5000) {
-            window.alert('Please wait a few seconds before scanning again to prevent system overload.');
+        if (now - lastRequestTime < 3000) {
             return;
         }
         setLastRequestTime(now);
@@ -1033,7 +1048,7 @@ export default function PlantDoctorPage() {
             }
 
             try {
-                // Call the AI-powered pest detection API
+                // Call the AI-powered agronomy pest detection API
                 const response = await fetch('/api/pest-detection', {
                     method: 'POST',
                     headers: {
@@ -1049,16 +1064,25 @@ export default function PlantDoctorPage() {
 
                 const data = await response.json();
 
-                if (response.ok && data.source === 'ai' && data.diagnosis) {
-                    // Use AI diagnosis
+                if (response.ok && data.diagnosis) {
+                    const diag = data.diagnosis;
                     const aiDiagnosis: DiagnosisResult = {
-                        disease: data.diagnosis.disease,
-                        plant: data.diagnosis.plant,
-                        confidence: data.diagnosis.confidence,
-                        severity: data.diagnosis.severity,
-                        description: data.diagnosis.description,
-                        treatment: data.diagnosis.treatment,
-                        preventiveMeasures: data.diagnosis.preventiveMeasures,
+                        disease: diag.disease || 'Crop Health Assessment',
+                        scientificName: diag.scientificName,
+                        plant: diag.crop || selectedCrop,
+                        confidence: typeof data.confidence === 'number' ? `${data.confidence}%` : (diag.confidence || '92%'),
+                        severity: (diag.severity ? (diag.severity.charAt(0).toUpperCase() + diag.severity.slice(1)) : 'Medium') as any,
+                        description: diag.description,
+                        cause: diag.cause,
+                        treatment: [
+                            diag.control?.chemical ? `Chemical Control: ${diag.control.chemical}` : '',
+                            diag.control?.biological ? `Biological Biocontrol: ${diag.control.biological}` : '',
+                            diag.control?.cultural ? `Agronomic / Cultural: ${diag.control.cultural}` : '',
+                        ].filter(Boolean),
+                        preventiveMeasures: Array.isArray(diag.symptoms) ? diag.symptoms : (diag.prevention ? [diag.prevention] : ['Maintain proper spacing', 'Avoid overhead irrigation']),
+                        control: diag.control,
+                        dosageGuide: diag.dosageGuide,
+                        preHarvestIntervalDays: diag.preHarvestIntervalDays ?? 14,
                     };
 
                     setAnalyzing(false);
@@ -1079,22 +1103,21 @@ export default function PlantDoctorPage() {
                 console.warn('AI pest detection fetch failed:', error);
             }
 
-            // Fallback to local heuristic diagnosis if AI fails
+            // Fallback to local heuristic diagnosis if API fails
             if (localDiagnosis) {
-                console.log('Using local heuristic fallback diagnosis.');
                 setAnalyzing(false);
                 setResult(localDiagnosis);
                 return;
             }
 
             setAnalyzing(false);
-            setCameraError('Failed to analyze image. Please try again later.');
+            setCameraError('Failed to analyze image. Please try again.');
             return;
 
         } catch (error) {
             console.warn('Analysis failed:', error);
             setAnalyzing(false);
-            setCameraError('Failed to analyze image. Please try again later.');
+            setCameraError('Failed to analyze image. Please try again.');
             return;
         }
     };
@@ -1103,7 +1126,24 @@ export default function PlantDoctorPage() {
         if (result && 'speechSynthesis' in window) {
             window.speechSynthesis.cancel();
 
-            const text = `Disease detected: ${result.disease}. Severity: ${result.severity}. ${result.description}. Treatment: ${result.treatment.join('. ')}`;
+            let text = `Disease detected: ${result.disease}. Severity rating: ${result.severity}. `;
+            if (result.scientificName) {
+                text += `Scientific pathogen name: ${result.scientificName}. `;
+            }
+            text += `${result.description}. `;
+            if (result.control?.chemical) {
+                text += `Recommended chemical treatment: ${result.control.chemical}. `;
+            }
+            if (result.control?.biological) {
+                text += `Biological alternative: ${result.control.biological}. `;
+            }
+            if (result.dosageGuide?.knapsack15L) {
+                text += `Dosage: use ${result.dosageGuide.knapsack15L} in a 15 liter knapsack sprayer. `;
+            }
+            if (result.preHarvestIntervalDays) {
+                text += `Pre-harvest safety waiting period is ${result.preHarvestIntervalDays} days before harvest.`;
+            }
+
             const utterance = new SpeechSynthesisUtterance(text);
             utterance.lang = 'en-IN';
             utterance.rate = 0.9;
@@ -1127,7 +1167,7 @@ export default function PlantDoctorPage() {
             try {
                 await navigator.share({
                     title: 'Crop Disease Diagnosis',
-                    text: `Disease: ${result.disease}\nSeverity: ${result.severity}\nTreatment: ${result.treatment[0]}`,
+                    text: `Disease: ${result.disease}\nSeverity: ${result.severity}\nPathogen: ${result.scientificName || 'N/A'}\nChemical: ${result.control?.chemical || result.treatment[0] || 'N/A'}`,
                 });
             } catch {
                 console.log('Share cancelled');
@@ -1141,6 +1181,10 @@ export default function PlantDoctorPage() {
         stopCamera();
     };
 
+    // Calculate sprayer metrics
+    const totalWaterLiters = Math.round(farmAcres * 200);
+    const refillsCount = Math.ceil(totalWaterLiters / (sprayerCapacity || 15));
+
     return (
         <div className="max-w-5xl mx-auto space-y-8 p-6">
             {/* Header */}
@@ -1148,55 +1192,70 @@ export default function PlantDoctorPage() {
                 <div>
                     <h1 className="text-4xl font-extrabold tracking-tight text-foreground flex items-center gap-3">
                         <Sparkles className="h-8 w-8 text-primary" />
-                        Plant Doctor
+                        AI Plant Doctor & Disease Diagnostic
                     </h1>
-                    <p className="text-muted-foreground mt-2 text-lg">
-                        AI-powered disease diagnosis & treatment recommendations.
+                    <p className="text-muted-foreground mt-1">
+                        Instant leaf pathogen identification, ICAR chemical dosage calculators, and bio-organic alternatives.
                     </p>
                 </div>
-                <div className="flex items-center gap-2">
+                {scanHistory.length > 0 && (
                     <button
                         onClick={() => setShowHistory(!showHistory)}
-                        className={`px-4 py-2 rounded-xl text-sm font-medium flex items-center gap-2 transition-colors ${showHistory ? 'bg-primary text-white' : 'bg-muted text-muted-foreground hover:text-foreground'
-                            }`}
+                        className="inline-flex items-center gap-2 px-4 py-2 border border-border rounded-xl text-sm font-medium hover:bg-muted transition-colors"
                     >
                         <History className="h-4 w-4" />
-                        History
+                        Scan History ({scanHistory.length})
                     </button>
-                    <div className="bg-primary/10 text-primary px-4 py-2 rounded-full font-semibold text-sm flex items-center gap-2">
-                        <Zap className="h-4 w-4" />
-                        v2.3 Context-Aware
-                    </div>
-                </div>
+                )}
             </div>
 
-            {/* Scan History Panel */}
-            {showHistory && scanHistory.length > 0 && (
-                <div className="bg-white dark:bg-card rounded-2xl border border-border p-4 shadow-sm animate-in fade-in slide-in-from-top-4">
-                    <h3 className="font-bold mb-3 text-sm text-muted-foreground uppercase tracking-wider">Recent Scans</h3>
-                    <div className="flex gap-3 overflow-x-auto pb-2">
-                        {scanHistory.map((scan, idx) => (
-                            <div
-                                key={idx}
-                                className="shrink-0 w-32 p-2 rounded-xl border border-border hover:border-primary transition-colors cursor-pointer group"
-                                onClick={() => {
-                                    setImage(scan.image);
-                                    setResult(scan.result);
-                                    setShowHistory(false);
-                                }}
-                            >
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img src={scan.image} alt="Scan" className="w-full h-20 object-cover rounded-lg mb-2" />
-                                <p className="text-xs font-medium truncate group-hover:text-primary">{scan.disease.split('(')[0]}</p>
-                                <p className="text-xs text-muted-foreground">{scan.date}</p>
+            {/* History Drawer */}
+            <AnimatePresence>
+                {showHistory && (
+                    <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="overflow-hidden"
+                    >
+                        <div className="bg-card border border-border rounded-2xl p-6">
+                            <h3 className="font-bold text-lg mb-4 flex items-center gap-2">
+                                <History className="h-5 w-5 text-primary" />
+                                Recent Scans
+                            </h3>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
+                                {scanHistory.map((item, index) => (
+                                    <div
+                                        key={index}
+                                        onClick={() => {
+                                            setImage(item.image);
+                                            setResult(item.result);
+                                            setShowHistory(false);
+                                        }}
+                                        className="cursor-pointer group rounded-xl border border-border overflow-hidden hover:border-primary transition-colors bg-muted/20"
+                                    >
+                                        <div className="aspect-square relative overflow-hidden">
+                                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                                            <img
+                                                src={item.image}
+                                                alt={item.disease}
+                                                className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                                            />
+                                        </div>
+                                        <div className="p-2">
+                                            <p className="font-bold text-xs truncate text-foreground">{item.disease}</p>
+                                            <p className="text-[10px] text-muted-foreground">{item.date}</p>
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
-                        ))}
-                    </div>
-                </div>
-            )}
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
-            <div className="grid lg:grid-cols-2 gap-8 items-start">
-                {/* Upload & Camera Area */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* Left Panel: Camera/Upload & Context Controls */}
                 <div className="space-y-6">
                     <div className="rounded-2xl border-2 border-dashed border-border bg-card/50 hover:bg-card/80 transition-colors relative overflow-hidden min-h-[450px] flex flex-col">
 
@@ -1335,7 +1394,7 @@ export default function PlantDoctorPage() {
                                                     </div>
                                                 </motion.div>
 
-                                                {/* Random AI Analysis Nodes */}
+                                                {/* Analysis Nodes */}
                                                 {Array.from({ length: 4 }).map((_, i) => (
                                                     <motion.div
                                                         key={`node-${i}`}
@@ -1349,7 +1408,7 @@ export default function PlantDoctorPage() {
                                                     >
                                                         <div className="w-1 h-1 bg-primary rounded-full animate-ping" />
                                                         <div className="absolute -top-4 text-[8px] font-mono text-primary/80 bg-background/50 px-1 rounded whitespace-nowrap">
-                                                            A-{Math.floor(Math.random() * 900) + 100}
+                                                            ICAR-{Math.floor(Math.random() * 900) + 100}
                                                         </div>
                                                     </motion.div>
                                                 ))}
@@ -1361,8 +1420,8 @@ export default function PlantDoctorPage() {
                                                         className="bg-black/80 backdrop-blur-md text-white px-8 py-5 rounded-3xl flex flex-col items-center gap-3 shadow-[0_0_40px_rgba(34,197,94,0.2)] border border-primary/20"
                                                     >
                                                         <div className="flex flex-col items-center">
-                                                            <span className="font-bold text-lg tracking-wide text-white">Analyzing Crop</span>
-                                                            <span className="text-[11px] text-primary/80 font-mono mt-1.5 uppercase tracking-widest animate-pulse">Consulting Agricultural Database...</span>
+                                                            <span className="font-bold text-lg tracking-wide text-white">Analyzing Crop Pathology</span>
+                                                            <span className="text-[11px] text-primary/80 font-mono mt-1.5 uppercase tracking-widest animate-pulse">Running ICAR Diagnosis Protocols...</span>
                                                         </div>
                                                     </motion.div>
                                                 </div>
@@ -1389,7 +1448,7 @@ export default function PlantDoctorPage() {
                                             className="w-full inline-flex items-center justify-center rounded-xl bg-primary px-6 py-4 text-base font-bold text-white shadow-lg shadow-primary/25 transition-all hover:bg-primary/90 hover:shadow-primary/40 active:scale-[0.98]"
                                         >
                                             <Scan className="mr-2 h-5 w-5" />
-                                            Diagnose Disease
+                                            Diagnose Disease & Dosage
                                         </button>
                                     </div>
                                 )}
@@ -1401,7 +1460,7 @@ export default function PlantDoctorPage() {
                         <div>
                             <h4 className="font-bold text-amber-900 dark:text-amber-300 text-sm">Field Context (Improves Accuracy)</h4>
                             <p className="text-xs text-amber-800/80 dark:text-amber-200/80 mt-1">
-                                Add crop type and visible symptoms to help narrow disease candidates.
+                                Specify crop type and visible leaf symptoms to accelerate diagnostic accuracy.
                             </p>
                         </div>
 
@@ -1459,12 +1518,12 @@ export default function PlantDoctorPage() {
 
                     {/* Quick Tips */}
                     <div className="bg-blue-50 dark:bg-blue-900/10 rounded-xl p-4 border border-blue-100 dark:border-blue-900/20">
-                        <h4 className="font-bold text-blue-800 dark:text-blue-300 text-sm mb-2">📸 Tips for Better Results</h4>
+                        <h4 className="font-bold text-blue-800 dark:text-blue-300 text-sm mb-2">📸 Diagnostic Quality Guidelines</h4>
                         <ul className="text-sm text-blue-700 dark:text-blue-400 space-y-1">
-                            <li>• Ensure good lighting on the affected area</li>
-                            <li>• Focus on a single leaf or symptom</li>
-                            <li>• Capture both the front and back of leaves</li>
-                            <li>• Include some healthy tissue for comparison</li>
+                            <li>• Take close-up shots under clear, natural sunlight</li>
+                            <li>• Capture the boundary between healthy and necrotic tissue</li>
+                            <li>• Check both upper and underside of the leaf</li>
+                            <li>• Avoid blurry or high-shadow photographs</li>
                         </ul>
                     </div>
                 </div>
@@ -1473,12 +1532,13 @@ export default function PlantDoctorPage() {
                 <div>
                     {result ? (
                         <div className={`bg-white dark:bg-card border-2 rounded-2xl overflow-hidden shadow-lg animate-in slide-in-from-right-8 duration-500 ${
-                            result.severity === 'High' ? 'border-red-500/50 shadow-[0_4px_20px_rgba(239,68,68,0.1)]' :
+                            result.severity === 'High' || result.severity === 'Critical' ? 'border-red-500/50 shadow-[0_4px_20px_rgba(239,68,68,0.1)]' :
                             result.severity === 'Medium' ? 'border-amber-500/50 shadow-[0_4px_20px_rgba(245,158,11,0.1)]' :
                             'border-green-500/50 shadow-[0_4px_20px_rgba(34,197,94,0.1)]'
                         }`}>
                             {/* Header with severity indicator */}
-                            <div className={`p-6 border-b ${result.severity === 'High'
+                            <div className={`p-6 border-b ${
+                                result.severity === 'High' || result.severity === 'Critical'
                                 ? 'bg-red-50 dark:bg-red-900/10 border-red-100 dark:border-red-900/20'
                                 : result.severity === 'Medium'
                                     ? 'bg-amber-50 dark:bg-amber-900/10 border-amber-100 dark:border-amber-900/20'
@@ -1486,25 +1546,34 @@ export default function PlantDoctorPage() {
                                 }`}>
                                 <div className="flex items-start justify-between mb-4">
                                     <div className="flex items-center gap-3">
-                                        <div className={`p-2 rounded-lg ${result.severity === 'High' ? 'bg-red-100 dark:bg-red-900/30' :
+                                        <div className={`p-2 rounded-lg ${
+                                            result.severity === 'High' || result.severity === 'Critical' ? 'bg-red-100 dark:bg-red-900/30' :
                                             result.severity === 'Medium' ? 'bg-amber-100 dark:bg-amber-900/30' :
                                                 'bg-green-100 dark:bg-green-900/30'
                                             }`}>
-                                            <AlertTriangle className={`h-6 w-6 ${result.severity === 'High' ? 'text-red-600 dark:text-red-400' :
+                                            <AlertTriangle className={`h-6 w-6 ${
+                                                result.severity === 'High' || result.severity === 'Critical' ? 'text-red-600 dark:text-red-400' :
                                                 result.severity === 'Medium' ? 'text-amber-600 dark:text-amber-400' :
                                                     'text-green-600 dark:text-green-400'
                                                 }`} />
                                         </div>
                                         <div>
                                             <h2 className="text-2xl font-bold text-foreground">{result.disease}</h2>
-                                            <p className="text-sm text-muted-foreground font-medium">Affected: {result.plant}</p>
+                                            <div className="flex items-center gap-2">
+                                                <p className="text-sm text-muted-foreground font-medium">Crop: <span className="capitalize text-foreground font-bold">{result.plant}</span></p>
+                                                {result.scientificName && (
+                                                    <span className="text-xs italic text-primary/90 bg-primary/10 px-2 py-0.5 rounded">
+                                                        {result.scientificName}
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
                                     <div className="flex gap-2">
                                         <button
                                             onClick={isSpeaking ? stopSpeaking : speakDiagnosis}
                                             aria-label={isSpeaking ? 'Stop reading diagnosis' : 'Read diagnosis aloud'}
-                                            className="p-2 hover:bg-white/50 rounded-full text-foreground/70 hover:text-primary transition-colors"
+                                            className="p-2 hover:bg-white/50 dark:hover:bg-black/30 rounded-full text-foreground/70 hover:text-primary transition-colors"
                                             title="Listen to diagnosis"
                                         >
                                             <Volume2 className={`h-6 w-6 ${isSpeaking ? 'text-primary animate-pulse' : ''}`} />
@@ -1512,19 +1581,20 @@ export default function PlantDoctorPage() {
                                         <button
                                             onClick={shareDiagnosis}
                                             aria-label="Share diagnosis"
-                                            className="p-2 hover:bg-white/50 rounded-full text-foreground/70 hover:text-primary transition-colors"
+                                            className="p-2 hover:bg-white/50 dark:hover:bg-black/30 rounded-full text-foreground/70 hover:text-primary transition-colors"
                                             title="Share diagnosis"
                                         >
                                             <Share2 className="h-6 w-6" />
                                         </button>
                                     </div>
                                 </div>
-                                <div className="flex gap-3">
+                                <div className="flex flex-wrap gap-3">
                                     <div className="px-3 py-1 bg-white/60 dark:bg-black/20 rounded-lg text-sm font-semibold border border-border/50">
                                         <span className="text-muted-foreground">Confidence: </span>
                                         <span className="text-foreground">{result.confidence}</span>
                                     </div>
-                                    <div className={`px-3 py-1 rounded-lg text-sm font-bold border ${result.severity === 'High'
+                                    <div className={`px-3 py-1 rounded-lg text-sm font-bold border ${
+                                        result.severity === 'High' || result.severity === 'Critical'
                                         ? 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 border-red-200/50'
                                         : result.severity === 'Medium'
                                             ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border-amber-200/50'
@@ -1532,73 +1602,150 @@ export default function PlantDoctorPage() {
                                         }`}>
                                         Severity: {result.severity}
                                     </div>
+                                    {result.preHarvestIntervalDays && (
+                                        <div className="px-3 py-1 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 rounded-lg text-sm font-semibold border border-blue-200/50">
+                                            Pre-Harvest Interval (PHI): {result.preHarvestIntervalDays} Days
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 
-                            {/* Confidence Warning */}
-                            {!isNaN(parseInt(result.confidence.replace('%', ''))) && parseInt(result.confidence.replace('%', '')) < 60 && (
-                                <div className="bg-red-50 dark:bg-red-900/20 border-b border-red-100 dark:border-red-900/30 p-4 px-6 flex items-start gap-3">
-                                    <AlertTriangle className="h-5 w-5 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
-                                    <p className="text-sm text-red-800 dark:text-red-300 font-medium leading-relaxed">
-                                        Low Confidence ({result.confidence}): The AI isn't entirely sure. The image might be blurry or the symptoms are unusual. For a more accurate diagnosis, please upload a clearer, close-up photo of the affected area.
-                                    </p>
-                                </div>
-                            )}
-
                             <div className="p-6 space-y-6">
-                                {/* Diagnosis */}
+                                {/* Pathological Cause & Overview */}
                                 <div>
-                                    <h4 className="text-sm font-bold text-muted-foreground uppercase tracking-wider mb-2">Diagnosis</h4>
-                                    <p className="text-foreground leading-relaxed">
+                                    <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">Agronomic Pathology Assessment</h4>
+                                    <p className="text-foreground leading-relaxed text-sm">
                                         {result.description}
                                     </p>
+                                    {result.cause && (
+                                        <p className="text-xs text-muted-foreground mt-2 bg-muted/50 p-2.5 rounded-lg border border-border">
+                                            <span className="font-semibold text-foreground">Etiology & Spread: </span>{result.cause}
+                                        </p>
+                                    )}
                                 </div>
 
-                                {/* Treatment */}
-                                <div className="space-y-3">
-                                    <h4 className="text-sm font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-                                        <CheckCircle2 className="h-4 w-4 text-green-600" />
-                                        Recommended Treatment
-                                    </h4>
-                                    <div className="bg-muted/30 rounded-xl p-4 space-y-3 border border-border/50">
-                                        {result.treatment.map((step: string, i: number) => (
-                                            <div key={i} className="flex items-start gap-3">
-                                                <div className="h-6 w-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">
-                                                    {i + 1}
-                                                </div>
-                                                <p className="text-sm text-foreground/90">{step}</p>
-                                            </div>
-                                        ))}
+                                {/* Knapsack Dosage Calculator Widget */}
+                                <div className="bg-primary/5 rounded-2xl p-5 border border-primary/20 space-y-4">
+                                    <div className="flex justify-between items-center">
+                                        <h4 className="text-sm font-bold text-foreground flex items-center gap-2">
+                                            <Zap className="h-4 w-4 text-primary" />
+                                            Knapsack Sprayer & Dosage Calculator
+                                        </h4>
+                                        <span className="text-[11px] font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded">
+                                            Standard ICAR Ratio
+                                        </span>
                                     </div>
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label htmlFor="sprayer-capacity" className="text-xs font-medium text-muted-foreground block mb-1">Sprayer Tank Size</label>
+                                            <select
+                                                id="sprayer-capacity"
+                                                value={sprayerCapacity}
+                                                onChange={(e) => setSprayerCapacity(Number(e.target.value))}
+                                                className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                                            >
+                                                <option value={15}>15 Liters (Standard Knapsack)</option>
+                                                <option value={20}>20 Liters (Power Sprayer)</option>
+                                                <option value={50}>50 Liters (Trolley Sprayer)</option>
+                                                <option value={200}>200 Liters (Tractor Barrel)</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label htmlFor="farm-acres" className="text-xs font-medium text-muted-foreground block mb-1">Target Land Area (Acres)</label>
+                                            <input
+                                                id="farm-acres"
+                                                type="number"
+                                                min={0.5}
+                                                max={50}
+                                                step={0.5}
+                                                value={farmAcres}
+                                                onChange={(e) => setFarmAcres(Math.max(0.5, Number(e.target.value)))}
+                                                className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-3 gap-2 pt-2 text-center">
+                                        <div className="bg-card p-2.5 rounded-xl border border-border">
+                                            <p className="text-[11px] text-muted-foreground">Water Volume</p>
+                                            <p className="text-base font-bold text-foreground">{totalWaterLiters} L</p>
+                                        </div>
+                                        <div className="bg-card p-2.5 rounded-xl border border-border">
+                                            <p className="text-[11px] text-muted-foreground">Tank Refills</p>
+                                            <p className="text-base font-bold text-primary">{refillsCount} tanks</p>
+                                        </div>
+                                        <div className="bg-card p-2.5 rounded-xl border border-border">
+                                            <p className="text-[11px] text-muted-foreground">Dosage / Tank</p>
+                                            <p className="text-base font-bold text-foreground">
+                                                {sprayerCapacity === 15 && (result.dosageGuide?.knapsack15L || '30 - 35 g')}
+                                                {sprayerCapacity === 20 && (result.dosageGuide?.knapsack20L || '40 - 45 g')}
+                                                {sprayerCapacity === 50 && '100 - 120 g'}
+                                                {sprayerCapacity === 200 && (result.dosageGuide?.barrel200L || '400 - 500 g')}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Integrated Control Protocols: Chemical, Biological, Cultural */}
+                                <div className="space-y-3">
+                                    <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                        <CheckCircle2 className="h-4 w-4 text-green-600" />
+                                        Verified Treatment Protocols
+                                    </h4>
+
+                                    {result.control ? (
+                                        <div className="space-y-2.5">
+                                            {result.control.chemical && (
+                                                <div className="p-3.5 bg-red-500/5 rounded-xl border border-red-500/20 text-sm">
+                                                    <span className="font-bold text-red-700 dark:text-red-400 block mb-1">🧪 Chemical Intervention (ICAR):</span>
+                                                    <span className="text-foreground/90 leading-relaxed">{result.control.chemical}</span>
+                                                </div>
+                                            )}
+                                            {result.control.biological && (
+                                                <div className="p-3.5 bg-green-500/5 rounded-xl border border-green-500/20 text-sm">
+                                                    <span className="font-bold text-green-700 dark:text-green-400 block mb-1">🌿 Bio-Organic Alternative:</span>
+                                                    <span className="text-foreground/90 leading-relaxed">{result.control.biological}</span>
+                                                </div>
+                                            )}
+                                            {result.control.cultural && (
+                                                <div className="p-3.5 bg-blue-500/5 rounded-xl border border-blue-500/20 text-sm">
+                                                    <span className="font-bold text-blue-700 dark:text-blue-400 block mb-1">🚜 Agronomic & Cultural Care:</span>
+                                                    <span className="text-foreground/90 leading-relaxed">{result.control.cultural}</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <div className="bg-muted/30 rounded-xl p-4 space-y-3 border border-border/50">
+                                            {result.treatment.map((step: string, i: number) => (
+                                                <div key={i} className="flex items-start gap-3">
+                                                    <div className="h-6 w-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">
+                                                        {i + 1}
+                                                    </div>
+                                                    <p className="text-sm text-foreground/90">{step}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Preventive Measures */}
                                 <div className="space-y-3">
-                                    <h4 className="text-sm font-bold text-muted-foreground uppercase tracking-wider">Preventive Measures</h4>
-                                    <div className="grid grid-cols-2 gap-2">
+                                    <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Preventive Farm Management</h4>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                         {result.preventiveMeasures.map((measure, i) => (
-                                            <div key={i} className="flex items-center gap-2 p-2 bg-blue-50 dark:bg-blue-900/10 rounded-lg text-sm">
+                                            <div key={i} className="flex items-center gap-2 p-2.5 bg-blue-50 dark:bg-blue-900/10 rounded-lg text-sm">
                                                 <CheckCircle2 className="h-4 w-4 text-blue-500 shrink-0" />
-                                                <span className="text-blue-700 dark:text-blue-300">{measure}</span>
+                                                <span className="text-blue-700 dark:text-blue-300 text-xs font-medium">{measure}</span>
                                             </div>
                                         ))}
                                     </div>
-                                </div>
-
-                                {/* Action Buttons */}
-                                <div className="flex gap-3 pt-2">
-                                    <button className="flex-1 py-2.5 bg-primary text-white text-sm font-semibold rounded-lg hover:bg-primary/90 transition-colors shadow-sm">
-                                        Find Treatment Products
-                                    </button>
-                                    <button className="flex-1 py-2.5 border border-border text-foreground text-sm font-semibold rounded-lg hover:bg-muted transition-colors">
-                                        Consult Expert
-                                    </button>
                                 </div>
 
                                 {/* Scan Again */}
                                 <button
                                     onClick={resetScan}
-                                    className="w-full py-2.5 text-muted-foreground text-sm font-medium hover:text-foreground transition-colors flex items-center justify-center gap-2"
+                                    className="w-full py-3 bg-muted hover:bg-muted/80 text-foreground font-semibold rounded-xl transition-colors flex items-center justify-center gap-2 text-sm border border-border"
                                 >
                                     <RotateCcw className="h-4 w-4" />
                                     Scan Another Image

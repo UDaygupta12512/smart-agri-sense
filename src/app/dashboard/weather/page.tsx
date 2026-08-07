@@ -9,6 +9,7 @@ import {
     CloudSun,
     Droplets,
     Eye,
+    Bot,
     Gauge,
     Loader2,
     MapPin,
@@ -31,6 +32,7 @@ import {
     type GeoLocation,
     type WeatherForecast,
 } from '@/lib/agriWeather';
+import { type WeatherAlert } from '@/lib/weatherAgent';
 
 const DAY_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -152,6 +154,9 @@ export default function WeatherPage() {
     const [loadingWeather, setLoadingWeather] = useState(true);
     const [weatherError, setWeatherError] = useState('');
 
+    const [aiAlerts, setAiAlerts] = useState<WeatherAlert[]>([]);
+    const [loadingAi, setLoadingAi] = useState(false);
+
     useEffect(() => {
         try {
             const raw = localStorage.getItem('weatherLocation');
@@ -216,7 +221,24 @@ export default function WeatherPage() {
             }
         }
 
+        async function loadAiAlerts() {
+            setLoadingAi(true);
+            try {
+                const res = await fetch(`/api/weather-agent?lat=${selectedLocation.latitude}&lon=${selectedLocation.longitude}`);
+                if (!res.ok) throw new Error('Agent failed');
+                const data = await res.json();
+                if (active && data.alerts) {
+                    setAiAlerts(data.alerts);
+                }
+            } catch (err) {
+                console.error(err);
+            } finally {
+                if (active) setLoadingAi(false);
+            }
+        }
+
         void loadWeather();
+        void loadAiAlerts();
 
         return () => {
             active = false;
@@ -676,6 +698,51 @@ export default function WeatherPage() {
 
             {weatherData && activeTab === 'insights' && (
                 <div className="space-y-6">
+                    {/* --- AI AGENTIC ALERTS --- */}
+                    <div>
+                        <h3 className="font-bold text-lg mb-4 flex items-center gap-2">
+                            <Bot className="h-5 w-5 text-indigo-500" />
+                            Autonomous AI Weather Agent
+                        </h3>
+                        {loadingAi ? (
+                            <div className="bg-indigo-50 dark:bg-indigo-900/10 border border-indigo-200 dark:border-indigo-900/40 rounded-xl p-4 flex items-center text-sm text-indigo-700">
+                                <Loader2 className="h-4 w-4 animate-spin mr-2" /> AI Agent analyzing 7-day forecast...
+                            </div>
+                        ) : aiAlerts.length > 0 ? (
+                            <div className="space-y-3">
+                                {aiAlerts.map((alert, idx) => {
+                                    let Icon = AlertTriangle;
+                                    let bg = 'bg-indigo-50 border-indigo-200 text-indigo-800';
+                                    let iconColor = 'text-indigo-600';
+                                    
+                                    if (alert.type === 'critical') {
+                                        bg = 'bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-900/30 text-red-800 dark:text-red-300';
+                                        iconColor = 'text-red-600';
+                                    } else if (alert.type === 'warning') {
+                                        bg = 'bg-amber-50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-900/30 text-amber-800 dark:text-amber-300';
+                                        iconColor = 'text-amber-600';
+                                    } else if (alert.type === 'success') {
+                                        bg = 'bg-green-50 dark:bg-green-900/10 border-green-200 dark:border-green-900/30 text-green-800 dark:text-green-300';
+                                        iconColor = 'text-green-600';
+                                        Icon = Sprout;
+                                    }
+                                    
+                                    return (
+                                        <div key={idx} className={`${bg} border rounded-xl p-4 flex gap-4 items-start`}>
+                                            <Icon className={`h-6 w-6 shrink-0 mt-0.5 ${iconColor}`} />
+                                            <div>
+                                                <h4 className="font-bold">{alert.title} {alert.date ? `(${alert.date})` : ''}</h4>
+                                                <p className="text-sm mt-1 opacity-90">{alert.message}</p>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        ) : null}
+                    </div>
+
+                    <div className="border-t border-border/50 my-6"></div>
+
                     {advisoryAlerts.length > 0 ? (
                         <div className="space-y-3">
                             {rainAlerts.map((alert, idx) => (

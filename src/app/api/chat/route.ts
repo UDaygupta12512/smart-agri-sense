@@ -83,6 +83,8 @@ async function callGroq(prompt: string): Promise<string | null> {
     const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
     const GROQ_API_KEY = process.env.GROQ_API_KEY || '';
 
+    if (!GROQ_API_KEY) return null;
+
     try {
         const response = await fetch(GROQ_API_URL, {
             method: 'POST',
@@ -165,6 +167,7 @@ async function callGemini(apiKey: string, prompt: string): Promise<string | null
 }
 
 async function generateEmbedding(apiKey: string, text: string): Promise<number[] | null> {
+    if (!apiKey || apiKey === 'your_gemini_api_key_here') return null;
     try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${apiKey}`;
         const response = await fetch(url, {
@@ -207,33 +210,24 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Message is required' }, { status: 400 });
         }
 
-        // --- Semantic Interceptor (API Saver) ---
-        // This stops basic small talk from hitting the expensive LLM
+        // --- Semantic Interceptor (Fast Greeting/Identity Handler) ---
         const lowerMsg = message.toLowerCase().trim().replace(/[?!.]/g, '');
         const greetings = ['hi', 'hello', 'hey', 'namaste', 'vanakkam', 'hi there'];
         const identityQ = ['who are you', 'what is your name', 'what are you', 'who made you', 'who created you'];
         const thanks = ['thank you', 'thanks', 'dhanyavad', 'nandri', 'shukriya'];
 
         if (greetings.includes(lowerMsg)) {
-            return NextResponse.json({ response: 'Namaste! I am Krishi Mitra, your AI Agricultural Advisor. How can I help you with your farming today?', source: 'interceptor' });
+            return NextResponse.json({ response: 'Namaste! I am Krishi Mitra, your AI Agricultural Advisor. How can I help you with your crops, pests, soil, or markets today?', source: 'interceptor' });
         }
         if (identityQ.some(q => lowerMsg.includes(q))) {
-            return NextResponse.json({ response: 'I am Krishi Mitra, an AI built to assist Indian farmers with crop management, pest detection, and government schemes.', source: 'interceptor' });
+            return NextResponse.json({ response: 'I am Krishi Mitra, an AI built to assist Indian farmers with precision agronomy, ICAR disease protocols, smart irrigation, and government schemes.', source: 'interceptor' });
         }
         if (thanks.includes(lowerMsg)) {
-            return NextResponse.json({ response: 'You are very welcome! Let me know if you need any more farming advice.', source: 'interceptor' });
+            return NextResponse.json({ response: 'You are very welcome! Let me know if you need any more farming advice or spray dosage calculations.', source: 'interceptor' });
         }
-        // ----------------------------------------
 
         const apiKey = process.env.GEMINI_API_KEY?.trim();
         const localAnswer = () => buildFarmingKnowledgeAnswer(message, language);
-
-        if (!apiKey || apiKey === 'your_gemini_api_key_here') {
-            return NextResponse.json({
-                response: 'API key is missing. Please configure GEMINI_API_KEY in your environment to use the Krishi Mitra AI.',
-                source: 'error',
-            });
-        }
 
         const languageInstruction = getLanguageInstruction(language);
         let historyPrompt = '';
@@ -246,27 +240,27 @@ export async function POST(request: NextRequest) {
             locationContext = `[SYSTEM NOTE: The farmer is currently located at GPS coordinates: ${locationStr}. Please tailor your advice (crops, weather, soil, diseases) specifically to this region in India if applicable.]\n\n`;
         }
 
-        // --- RAG Layer 1: Supabase pgvector (cloud neural search) ---
+        // --- RAG Layer 1: Supabase pgvector ---
         let ragContext = '';
-        const embedding = await generateEmbedding(apiKey, message);
-        if (embedding) {
-            const { data: documents, error } = await supabase.rpc('match_documents', {
-                query_embedding: embedding,
-                match_threshold: 0.7,
-                match_count: 3
-            });
-
-            if (!error && documents && documents.length > 0) {
-                ragContext = '[SYSTEM NOTE: Use the following retrieved documents from the official knowledge base to answer accurately.]\n';
-                documents.forEach((doc: any, i: number) => {
-                    ragContext += `--- Document ${i + 1} (Neural Search) ---\n${doc.content}\n\n`;
+        if (apiKey && apiKey !== 'your_gemini_api_key_here') {
+            const embedding = await generateEmbedding(apiKey, message);
+            if (embedding) {
+                const { data: documents, error } = await supabase.rpc('match_documents', {
+                    query_embedding: embedding,
+                    match_threshold: 0.7,
+                    match_count: 3
                 });
-                console.log(`RAG Layer 1 (Supabase pgvector): found ${documents.length} docs`);
+
+                if (!error && documents && documents.length > 0) {
+                    ragContext = '[SYSTEM NOTE: Use the following retrieved documents from the official knowledge base to answer accurately.]\n';
+                    documents.forEach((doc: any, i: number) => {
+                        ragContext += `--- Document ${i + 1} (Neural Search) ---\n${doc.content}\n\n`;
+                    });
+                }
             }
         }
 
-        // --- RAG Layer 2: Custom TF-IDF Search (Feature 2 — zero third-party libs) ---
-        // Runs as a fallback if Supabase returns nothing OR as a supplement
+        // --- RAG Layer 2: Custom TF-IDF Search (Zero third-party dependency) ---
         if (!ragContext) {
             try {
                 const localResults = localVectorSearch(message, 3, 0.05);
@@ -275,13 +269,11 @@ export async function POST(request: NextRequest) {
                     localResults.forEach((doc, i) => {
                         ragContext += `--- Document ${i + 1} (Local TF-IDF Search, similarity: ${doc.similarity.toFixed(3)}) ---\n${doc.content}\n\n`;
                     });
-                    console.log(`RAG Layer 2 (Custom TF-IDF): found ${localResults.length} docs`);
                 }
             } catch (e) {
                 console.warn('Local vector search unavailable:', e);
             }
         }
-        // ---------------------------------------------------------------
 
         const prompt =
             `${SYSTEM_PROMPT}\n\n${languageInstruction}\n\n` +
@@ -290,22 +282,28 @@ export async function POST(request: NextRequest) {
             `${ragContext}` +
             `User question (answer this exactly):\n"${message}"`;
 
-        let aiResponse = await callGemini(apiKey, prompt);
+        let aiResponse: string | null = null;
 
+        // Try Gemini if API key is present
+        if (apiKey && apiKey !== 'your_gemini_api_key_here') {
+            aiResponse = await callGemini(apiKey, prompt);
+        }
+
+        // Fallback to Groq Llama-3.3-70b
         if (!aiResponse) {
-            console.log('Gemini chat failed, trying Groq...');
             aiResponse = await callGroq(prompt);
         }
 
         if (aiResponse) {
             if (user) {
-                const { error: insertError } = await serverSupabase.from('chat_history').insert({
-                    user_id: user.id,
-                    message: message,
-                    response: aiResponse
-                });
-                if (insertError) {
-                    console.error('Failed to save chat history:', insertError);
+                try {
+                    await serverSupabase.from('chat_history').insert({
+                        user_id: user.id,
+                        message: message,
+                        response: aiResponse
+                    });
+                } catch {
+                    // Ignore DB recording errors
                 }
             }
 
@@ -315,20 +313,21 @@ export async function POST(request: NextRequest) {
             });
         }
 
-        console.log('Both AI APIs failed — trying Custom Crop Advisory Engine...');
-
-        // --- FEATURE 1: Custom Crop Advisory Engine (Zero API, Zero Libraries) ---
+        // --- FEATURE 1: Custom Crop Advisory Decision Engine (Zero external API) ---
         const engineResult = runCropAdvisoryEngine({ query: message });
         if (engineResult) {
             const engineResponse = formatAdvisoryAsText(engineResult);
-            console.log(`Decision engine matched: intent=${engineResult.intent}, crop=${engineResult.crop}, confidence=${engineResult.confidence}%`);
 
             if (user) {
-                await serverSupabase.from('chat_history').insert({
-                    user_id: user.id,
-                    message: message,
-                    response: engineResponse,
-                });
+                try {
+                    await serverSupabase.from('chat_history').insert({
+                        user_id: user.id,
+                        message: message,
+                        response: engineResponse,
+                    });
+                } catch {
+                    // Ignore
+                }
             }
 
             return NextResponse.json({
@@ -336,17 +335,20 @@ export async function POST(request: NextRequest) {
                 source: 'decision_engine',
             });
         }
-        // -----------------------------------------------------------------------
 
-        console.log('Decision engine had no match — using offline knowledge base...');
+        // --- FEATURE 2: Local Agronomic Knowledge Base ---
         const fallbackResponse = localAnswer();
         
         if (user) {
-            await serverSupabase.from('chat_history').insert({
-                user_id: user.id,
-                message: message,
-                response: fallbackResponse
-            });
+            try {
+                await serverSupabase.from('chat_history').insert({
+                    user_id: user.id,
+                    message: message,
+                    response: fallbackResponse
+                });
+            } catch {
+                // Ignore
+            }
         }
 
         return NextResponse.json({
